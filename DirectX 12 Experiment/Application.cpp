@@ -6,6 +6,11 @@
 
 using Microsoft::WRL::ComPtr;
 
+void ThrowIfFailed(HRESULT Result)
+{
+	if (FAILED(Result)) throw std::runtime_error("HRESULT Failed");
+}
+
 class Application::ApplicationImplementation
 {
 public:
@@ -48,7 +53,7 @@ public:
 #endif
 
 		ComPtr<IDXGIFactory5> Factory;
-		CreateDXGIFactory2(DxgiFactoryFlags, IID_PPV_ARGS(&Factory));
+		ThrowIfFailed(CreateDXGIFactory2(DxgiFactoryFlags, IID_PPV_ARGS(&Factory)));
 
 		// Create Device
 		{
@@ -60,8 +65,9 @@ public:
 			for (UINT AdapterIndex = 0; Factory->EnumAdapters1(AdapterIndex, &Adapter) != DXGI_ERROR_NOT_FOUND; AdapterIndex++)
 			{
 				Adapter->GetDesc1(&Description);
-				if (Description.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) continue;
-				if (SUCCEEDED(D3D12CreateDevice(Adapter.Get(), D3D_FEATURE_LEVEL_12_1, _uuidof(ID3D12Device), nullptr)) &&
+				if ((Description.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0) continue;
+
+				if (SUCCEEDED(D3D12CreateDevice(Adapter.Get(), D3D_FEATURE_LEVEL_12_1, _uuidof(ID3D12Device3), nullptr)) &&
 					Description.DedicatedVideoMemory > MaximumVideoMemory)
 				{
 					MaximumVideoMemory = Description.DedicatedVideoMemory;
@@ -69,7 +75,7 @@ public:
 				}
 			}
 
-			D3D12CreateDevice(ChosenAdapter.Get(), D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&Device));
+			ThrowIfFailed(D3D12CreateDevice(ChosenAdapter.Get(), D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&Device)));
 		}
 
 		// Create Command Queue
@@ -78,7 +84,7 @@ public:
 			QueueDescription.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
 			QueueDescription.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
 
-			Device->CreateCommandQueue(&QueueDescription, IID_PPV_ARGS(&CommandQueue));
+			ThrowIfFailed(Device->CreateCommandQueue(&QueueDescription, IID_PPV_ARGS(&CommandQueue)));
 		}
 
 		// Create Swap Chain
@@ -93,17 +99,17 @@ public:
 			SwapChainDescription.SampleDesc.Count = 1;
 
 			ComPtr<IDXGISwapChain1> TemporarySwapChain;
-			Factory->CreateSwapChainForHwnd(
+			ThrowIfFailed(Factory->CreateSwapChainForHwnd(
 				CommandQueue.Get(),
 				Window,
 				&SwapChainDescription,
 				nullptr,
 				nullptr,
 				&TemporarySwapChain
-			);
+			));
 
-			Factory->MakeWindowAssociation(Window, DXGI_MWA_NO_ALT_ENTER);
-			TemporarySwapChain.As(&SwapChain);
+			ThrowIfFailed(Factory->MakeWindowAssociation(Window, DXGI_MWA_NO_ALT_ENTER));
+			ThrowIfFailed(TemporarySwapChain.As(&SwapChain));
 			CurrentFrameIndex = SwapChain->GetCurrentBackBufferIndex();
 		}
 
@@ -113,7 +119,7 @@ public:
 			RenderTargetHeapDescription.NumDescriptors = FrameCount;
 			RenderTargetHeapDescription.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
 			RenderTargetHeapDescription.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
-			Device->CreateDescriptorHeap(&RenderTargetHeapDescription, IID_PPV_ARGS(&RenderTargetHeap));
+			ThrowIfFailed(Device->CreateDescriptorHeap(&RenderTargetHeapDescription, IID_PPV_ARGS(&RenderTargetHeap)));
 			RenderTargetDescriptorSize = Device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 		}
 
@@ -122,7 +128,7 @@ public:
 			D3D12_CPU_DESCRIPTOR_HANDLE Handle = RenderTargetHeap->GetCPUDescriptorHandleForHeapStart();
 			for (UINT FrameIndex = 0; FrameIndex < FrameCount; FrameIndex++)
 			{
-				SwapChain->GetBuffer(FrameIndex, IID_PPV_ARGS(&RenderTargets[FrameIndex]));
+				ThrowIfFailed(SwapChain->GetBuffer(FrameIndex, IID_PPV_ARGS(&RenderTargets[FrameIndex])));
 				Device->CreateRenderTargetView(RenderTargets[FrameIndex].Get(), nullptr, Handle);
 				Handle.ptr += RenderTargetDescriptorSize;
 			}
@@ -130,16 +136,26 @@ public:
 
 		//Create Command List and Allocator
 		{
-			Device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&CommandAllocator));
-			Device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, CommandAllocator.Get(), nullptr, IID_PPV_ARGS(&CommandList));
-			CommandList->Close();
+			ThrowIfFailed(Device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&CommandAllocator)));
+			ThrowIfFailed(Device->CreateCommandList(
+				0, 
+				D3D12_COMMAND_LIST_TYPE_DIRECT, 
+				CommandAllocator.Get(), 
+				nullptr, 
+				IID_PPV_ARGS(&CommandList)
+			));
+			ThrowIfFailed(CommandList->Close());
 		}
 
 		// Create Fence
 		{
-			Device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&Fence));
+			ThrowIfFailed(Device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&Fence)));
 			FenceValue = 0;
 			FenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+			if (FenceEvent == nullptr)
+			{
+				ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
+			}
 		}
 	}
 
@@ -149,8 +165,8 @@ public:
 
 	void Render()
 	{
-		CommandAllocator->Reset();
-		CommandList->Reset(CommandAllocator.Get(), PipelineState.Get());
+		ThrowIfFailed(CommandAllocator->Reset());
+		ThrowIfFailed(CommandList->Reset(CommandAllocator.Get(), PipelineState.Get()));
 
 		// Fill Out Command List
 		{
@@ -178,12 +194,12 @@ public:
 			CommandList->ResourceBarrier(1, &RenderTargetToPresentBarrier);
 		}
 
-		CommandList->Close();
+		ThrowIfFailed(CommandList->Close());
 
 		ID3D12CommandList* CommandLists[] = { CommandList.Get() };
 		CommandQueue->ExecuteCommandLists(_countof(CommandLists), CommandLists);
 
-		SwapChain->Present(1, 0);
+		ThrowIfFailed(SwapChain->Present(1, 0));
 		WaitForPreviousFrame();
 	}
 
@@ -210,7 +226,7 @@ private:
 
 	static const UINT FrameCount = 2;
 	ComPtr<IDXGISwapChain4> SwapChain;
-	ComPtr<ID3D12Device> Device;
+	ComPtr<ID3D12Device3> Device;
 	ComPtr<ID3D12Resource1> RenderTargets[FrameCount];
 	ComPtr<ID3D12CommandQueue> CommandQueue;
 	ComPtr<ID3D12CommandAllocator> CommandAllocator;
@@ -226,10 +242,10 @@ private:
 
 	void WaitForPreviousFrame()
 	{
-		CommandQueue->Signal(Fence.Get(), ++FenceValue);
+		ThrowIfFailed(CommandQueue->Signal(Fence.Get(), ++FenceValue));
 		if (Fence->GetCompletedValue() < FenceValue)
 		{
-			Fence->SetEventOnCompletion(FenceValue, FenceEvent);
+			ThrowIfFailed(Fence->SetEventOnCompletion(FenceValue, FenceEvent));
 			WaitForSingleObject(FenceEvent, INFINITE);
 		}
 		CurrentFrameIndex = SwapChain->GetCurrentBackBufferIndex();
