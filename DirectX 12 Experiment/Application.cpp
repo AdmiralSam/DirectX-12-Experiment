@@ -125,7 +125,7 @@ public:
 
 		// Create Render Targets
 		{
-			D3D12_CPU_DESCRIPTOR_HANDLE Handle = RenderTargetHeap->GetCPUDescriptorHandleForHeapStart();
+			auto Handle = RenderTargetHeap->GetCPUDescriptorHandleForHeapStart();
 			for (UINT FrameIndex = 0; FrameIndex < FrameCount; FrameIndex++)
 			{
 				ThrowIfFailed(SwapChain->GetBuffer(FrameIndex, IID_PPV_ARGS(&RenderTargets[FrameIndex])));
@@ -170,7 +170,7 @@ public:
 
 		// Fill Out Command List
 		{
-			D3D12_RESOURCE_BARRIER PresentToRenderTargetBarrier = {};
+			D3D12_RESOURCE_BARRIER PresentToRenderTargetBarrier;
 			PresentToRenderTargetBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 			PresentToRenderTargetBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
 			PresentToRenderTargetBarrier.Transition.pResource = RenderTargets[CurrentFrameIndex].Get();
@@ -180,11 +180,11 @@ public:
 			CommandList->ResourceBarrier(1, &PresentToRenderTargetBarrier);
 
 			const float ClearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
-			D3D12_CPU_DESCRIPTOR_HANDLE RenderTargetHandle = RenderTargetHeap->GetCPUDescriptorHandleForHeapStart();
+			auto RenderTargetHandle = RenderTargetHeap->GetCPUDescriptorHandleForHeapStart();
 			RenderTargetHandle.ptr += CurrentFrameIndex * RenderTargetDescriptorSize;
 			CommandList->ClearRenderTargetView(RenderTargetHandle, ClearColor, 0, nullptr);
 
-			D3D12_RESOURCE_BARRIER RenderTargetToPresentBarrier = {};
+			D3D12_RESOURCE_BARRIER RenderTargetToPresentBarrier;
 			RenderTargetToPresentBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
 			RenderTargetToPresentBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
 			RenderTargetToPresentBarrier.Transition.pResource = RenderTargets[CurrentFrameIndex].Get();
