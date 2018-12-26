@@ -39,9 +39,10 @@ LRESULT CALLBACK ProcessMessage(HWND Window, UINT Message, WPARAM WParameter, LP
 	case WM_DESTROY:
 		PostQuitMessage(0);
 		return 0;
-	}
 
-	return DefWindowProc(Window, Message, WParameter, LParameter);
+	default:
+		return DefWindowProc(Window, Message, WParameter, LParameter);
+	}
 }
 
 int WINAPI WinMain(HINSTANCE Instance, HINSTANCE, LPSTR, int ShowCommands)
@@ -65,7 +66,7 @@ int WINAPI WinMain(HINSTANCE Instance, HINSTANCE, LPSTR, int ShowCommands)
 	RECT WindowRectangle = { 0, 0, static_cast<LONG>(App->GetWidth()), static_cast<LONG>(App->GetHeight()) };
 	AdjustWindowRect(&WindowRectangle, WS_OVERLAPPEDWINDOW, FALSE);
 
-	const HWND Window = CreateWindow(
+	HWND Window = CreateWindow(
 		WindowClass.lpszClassName,
 		App->GetWindowTitle(),
 		WS_OVERLAPPEDWINDOW,
@@ -79,6 +80,7 @@ int WINAPI WinMain(HINSTANCE Instance, HINSTANCE, LPSTR, int ShowCommands)
 		App
 	);
 
+	App->SetWindow(Window);
 	App->Initialize();
 	ShowWindow(Window, ShowCommands);
 
