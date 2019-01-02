@@ -1,19 +1,19 @@
 struct VertexInput
 {
 	float4 Position : POSITION;
-	float4 Color : COLOR;
+	float2 UV : TEXCOORD;
 };
 
 struct VertexOutput
 {
 	float4 Position : SV_POSITION;
-	float4 Color : COLOR;
+	float2 UV : TEXCOORD;
 };
 
 VertexOutput Main(VertexInput Input)
 {
 	VertexOutput Output;
 	Output.Position = Input.Position;
-	Output.Color = Input.Color;
+	Output.UV = Input.UV;
 	return Output;
 }
