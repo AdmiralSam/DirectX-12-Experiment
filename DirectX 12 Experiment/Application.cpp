@@ -29,6 +29,11 @@ public:
 
 		Viewport = { 0.0f, 0.0f, static_cast<float>(GetWidth()), static_cast<float>(GetHeight()) };
 		ScissorRectangle = { 0, 0, static_cast<LONG>(GetWidth()), static_cast<LONG>(GetHeight()) };
+
+		for (UINT FrameIndex = 0; FrameIndex < FrameCount; FrameIndex++)
+		{
+			FrameSignalValue[FrameIndex] = 0;
+		}
 	}
 
 	~ApplicationImplementation() = default;
@@ -286,12 +291,16 @@ public:
 
 		//Create Command List and Allocator
 		{
-			ThrowIfFailed(Device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&CommandAllocator)));
+			for (UINT FrameIndex = 0; FrameIndex < FrameCount; FrameIndex++)
+			{
+				ThrowIfFailed(Device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&CommandAllocator[FrameIndex])));
+			}
+
 			ThrowIfFailed(Device->CreateCommandList(
-				0, 
-				D3D12_COMMAND_LIST_TYPE_DIRECT, 
-				CommandAllocator.Get(), 
-				PipelineState.Get(), 
+				0,
+				D3D12_COMMAND_LIST_TYPE_DIRECT,
+				CommandAllocator[CurrentFrameIndex].Get(),
+				PipelineState.Get(),
 				IID_PPV_ARGS(&CommandList)
 			));
 		}
@@ -500,7 +509,7 @@ public:
 			}
 		}
 
-		WaitForPreviousFrame();
+		WaitForGpu();
 	}
 
 	void Update()
@@ -509,8 +518,8 @@ public:
 
 	void Render()
 	{
-		ThrowIfFailed(CommandAllocator->Reset());
-		ThrowIfFailed(CommandList->Reset(CommandAllocator.Get(), PipelineState.Get()));
+		ThrowIfFailed(CommandAllocator[CurrentFrameIndex]->Reset());
+		ThrowIfFailed(CommandList->Reset(CommandAllocator[CurrentFrameIndex].Get(), PipelineState.Get()));
 
 		// Fill Out Command List
 		{
@@ -555,12 +564,12 @@ public:
 		CommandQueue->ExecuteCommandLists(_countof(CommandLists), CommandLists);
 
 		ThrowIfFailed(SwapChain->Present(1, 0));
-		WaitForPreviousFrame();
+		AdvanceFrame();
 	}
 
 	void Dispose()
 	{
-		WaitForPreviousFrame();
+		WaitForGpu();
 		CloseHandle(FenceEvent);
 	}
 
@@ -587,7 +596,7 @@ private:
 	ComPtr<ID3D12Device3> Device;
 	ComPtr<ID3D12Resource> RenderTargets[FrameCount];
 	ComPtr<ID3D12CommandQueue> CommandQueue;
-	ComPtr<ID3D12CommandAllocator> CommandAllocator;
+	ComPtr<ID3D12CommandAllocator> CommandAllocator[FrameCount];
 	ComPtr<ID3D12GraphicsCommandList> CommandList;
 	ComPtr<ID3D12DescriptorHeap> RenderTargetHeap;
 	ComPtr<ID3D12DescriptorHeap> ShaderResourceHeap;
@@ -606,8 +615,9 @@ private:
 	HANDLE FenceEvent = nullptr;
 	ComPtr<ID3D12Fence1> Fence;
 	UINT64 FenceValue = 0;
+	UINT64 FrameSignalValue[FrameCount];
 
-	void WaitForPreviousFrame()
+	void WaitForGpu()
 	{
 		ThrowIfFailed(CommandQueue->Signal(Fence.Get(), ++FenceValue));
 		if (Fence->GetCompletedValue() < FenceValue)
@@ -615,7 +625,21 @@ private:
 			ThrowIfFailed(Fence->SetEventOnCompletion(FenceValue, FenceEvent));
 			WaitForSingleObject(FenceEvent, INFINITE);
 		}
-		CurrentFrameIndex = SwapChain->GetCurrentBackBufferIndex();
+	}
+
+	void AdvanceFrame()
+	{
+		CommandQueue->Signal(Fence.Get(), ++FenceValue);
+		FrameSignalValue[CurrentFrameIndex] = FenceValue;
+
+		const UINT NextFrameIndex = SwapChain->GetCurrentBackBufferIndex();
+		if (Fence->GetCompletedValue() < FrameSignalValue[NextFrameIndex])
+		{
+			ThrowIfFailed(Fence->SetEventOnCompletion(FrameSignalValue[NextFrameIndex], FenceEvent));
+			WaitForSingleObject(FenceEvent, INFINITE);
+		}
+
+		CurrentFrameIndex = NextFrameIndex;
 	}
 };
 
